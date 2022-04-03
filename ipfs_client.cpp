@@ -47,7 +47,7 @@ const char USER_AGENT[] = "ESP32-IPFS-Client";
 * Set node address
 * @param addr IPFS node address
 ******************************************************************************/
-IPFSClient::Result IPFSClient::set_addr(char *addr)
+IPFSClient::Result IPFSClient::set_addr(const char *addr)
 {
     http_parser_url_init(&_parser_url);
     if(parse_url(addr) != IPFS_CLIENT_OK)
@@ -84,7 +84,7 @@ IPFSClient::Result IPFSClient::set_addr(char *addr)
 *   - IPFS_CLIENT_OK Sucess
 *   - IPFS_CLIENT_INVALID_ADDRESS Invalid URL provided
 ******************************************************************************/
-IPFSClient::Result IPFSClient::parse_url(char *url)
+IPFSClient::Result IPFSClient::parse_url(const char *url)
 {
     http_parser_url_init(&_parser_url);
     
@@ -104,7 +104,7 @@ IPFSClient::Result IPFSClient::parse_url(char *url)
 * @param	data		Data
 * @return	Result struct
 ******************************************************************************/
-IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *content)
+IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, const char *content)
 {
     if(_buffer == nullptr)
     {
@@ -117,8 +117,9 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *con
 
     // Config ESP TLS to use cert bundle        
     esp_tls_cfg_t tls_cfg = {
+        .use_secure_element = false,
         .timeout_ms = _timeout_ms,
-        .crt_bundle_attach = esp_crt_bundle_attach,
+        .crt_bundle_attach = esp_crt_bundle_attach
     };
 
     ESP_LOGW(TAG, "Connecting to %s", _addr);
@@ -208,11 +209,15 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *con
     if(found != 1)
     {
         ESP_LOGE(TAG, "Response code not found");
+
+        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
     else if(resp_code != 200)
     {
         ESP_LOGE(TAG, "HTTP not OK, status: %d", resp_code);
+
+        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
 
@@ -221,6 +226,8 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *con
     if(resp_body == NULL)
     {
         ESP_LOGE(TAG, "Could not parse body");
+
+        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
     // Skip 2x \r\n
@@ -237,7 +244,8 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *con
         if (obj["name"].isNull() || obj["cid"]["/"].isNull() || obj["size"].isNull())
         {
             ESP_LOGE(TAG, "Invalid JSON object in response.");
-            
+
+            esp_tls_conn_delete(tls_conn);
             return IPFS_CLIENT_INVALID_RESPONSE;
         }
         else
@@ -249,15 +257,19 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, char *filename, char *con
                 file_out->size = obj["size"].as<uint32_t>();
             }
 
+            esp_tls_conn_delete(tls_conn);
             return IPFS_CLIENT_OK;
         }
     }
     else
     {
         ESP_LOGE(TAG, "Could not parse response JSON.");
+        
+        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
 
+    esp_tls_conn_delete(tls_conn);
     return IPFS_CLIENT_OK;
 }
 
@@ -295,7 +307,7 @@ void IPFSClient::set_basic_auth_creds_base64(const char *creds)
 * @param user Username
 * @param pass Password 
 ******************************************************************************/
-void IPFSClient::set_basic_auth_creds(char *user, char *pass)
+void IPFSClient::set_basic_auth_creds(const char *user, const char *pass)
 {
     char buff[100];
     size_t output_len = 0;

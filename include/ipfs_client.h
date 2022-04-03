@@ -9,6 +9,8 @@
 #ifndef IPFS_H
 #define IPFS_H
 
+#include "http_parser.h"
+
 class IPFSClient
 {
 public:
@@ -40,14 +42,14 @@ public:
     ~IPFSClient(){};
 
     void set_buffer(char *buff, int size);
-    Result set_addr(char *addr);
+    Result set_addr(const char *addr);
     void set_req_timeout(uint32_t ms);
     void set_basic_auth_creds_base64(const char *creds);
-    void set_basic_auth_creds(char *user, char *pass);
+    void set_basic_auth_creds(const char *user, const char *pass);
 
-    Result add(IPFSFile *file_out, char *filename, char *content);
+    Result add(IPFSFile *file_out, const char *filename, const char *content);
 private:
-    Result parse_url(char *url);
+    Result parse_url(const char *url);
 
     /** IPFS address */
     char _addr[60] = "";
