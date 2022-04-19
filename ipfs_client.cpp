@@ -16,11 +16,9 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
-#include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "http_parser.h"
 #include "mbedtls/base64.h"
-
 #include "ipfs_client.h"
 
 const char TAG[] = "IPFSClient";
@@ -30,9 +28,9 @@ const char TAG[] = "IPFSClient";
 
 // Write to socket, on failure return error
 #define ASSERT_WRITE(val) do { \
-    if(esp_tls_conn_write(tls_conn, val, strlen(val)) < 0) { \
+	printf("Wrote: %s\n", val); \
+	if(esp_tls_conn_write(_tls_conn, val, strlen(val)) < 0) { \
         ESP_LOGE(TAG, "Req. write failed"); \
-        esp_tls_conn_delete(tls_conn); \
         return IPFS_CLIENT_REQUEST_FAILED; \
     } \
 }while(0);\
@@ -41,7 +39,89 @@ const char TAG[] = "IPFSClient";
 // Constants
 //
 // Used both in user agent headers and as multipart boundary
-const char USER_AGENT[] = "ESP32-IPFS-Client";
+const char USER_AGENT[] = "ESP32_IPFS_Client";
+
+/******************************************************************************
+* Connect to node
+* @return 
+*	- IPFS_CLIENT_INVALID_STATE Already connected
+******************************************************************************/
+IPFSClient::Result IPFSClient::connect()
+{
+	if(is_connected())
+	{
+		ESP_LOGI(TAG, "Already connected.");
+		return IPFSClient::IPFS_CLIENT_INVALID_STATE;
+	}
+
+	auto status = get_status();
+	if(status != esp_tls_conn_state::ESP_TLS_FAIL &&
+		status != esp_tls_conn_state::ESP_TLS_INIT)
+	{
+		ESP_LOGI(TAG, "Already connected.");
+		return IPFSClient::IPFS_CLIENT_INVALID_STATE;
+	}
+
+	ESP_LOGW(TAG, "Connecting to %s", _addr);
+
+	// Config ESP TLS to use cert bundle        
+	esp_tls_cfg_t tls_cfg = {
+		.use_secure_element = false,
+		.timeout_ms = _timeout_ms,
+		.crt_bundle_attach = esp_crt_bundle_attach
+	};
+
+	_tls_conn = esp_tls_conn_http_new(_addr, &tls_cfg);
+	if(_tls_conn == NULL)
+	{
+		ESP_LOGE(TAG, "Could not open TLS connection.");
+		return IPFSClient::IPFS_CLIENT_CANNOT_CONNECT;
+	}
+
+	return IPFS_CLIENT_OK;
+}
+
+/******************************************************************************
+* Disconnect from node and cleanup
+******************************************************************************/
+IPFSClient::Result IPFSClient::disconnect()
+{
+	if(_tls_conn == NULL)
+		return Result::IPFS_CLIENT_NOT_CONNECTED;
+
+	esp_tls_conn_destroy(_tls_conn);
+
+	_tls_conn = NULL;
+
+	return IPFS_CLIENT_OK;
+}
+
+/******************************************************************************
+* Is client connected
+******************************************************************************/
+bool IPFSClient::is_connected()
+{
+	if(_tls_conn == NULL)
+		return false;
+
+	if(get_status() == esp_tls_conn_state::ESP_TLS_DONE)
+		return true;
+
+	return true;
+}
+
+/******************************************************************************
+* Get connection status
+******************************************************************************/
+esp_tls_conn_state IPFSClient::get_status()
+{
+	if(_tls_conn == NULL)
+	{
+		return esp_tls_conn_state::ESP_TLS_INIT;
+	}
+
+	return _tls_conn->conn_state;
+}
 
 /******************************************************************************
 * Set node address
@@ -106,29 +186,14 @@ IPFSClient::Result IPFSClient::parse_url(const char *url)
 ******************************************************************************/
 IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, const char *content)
 {
-    if(_buffer == nullptr)
+	if(!is_connected())
     {
-        return IPFS_CLIENT_INVALID_INPUT;
+		return IPFS_CLIENT_NOT_CONNECTED;
     }
 
-    //
-    // Build request
-    //
-
-    // Config ESP TLS to use cert bundle        
-    esp_tls_cfg_t tls_cfg = {
-        .use_secure_element = false,
-        .timeout_ms = _timeout_ms,
-        .crt_bundle_attach = esp_crt_bundle_attach
-    };
-
-    ESP_LOGW(TAG, "Connecting to %s", _addr);
-
-    struct esp_tls *tls_conn = esp_tls_conn_http_new(_addr, &tls_cfg);
-    if(tls_conn == NULL)
+	if(_buffer == nullptr)
     {
-        ESP_LOGE(TAG, "Could not open TLS connection.");
-        return IPFSClient::IPFS_CLIENT_CANNOT_CONNECT;
+		return IPFS_CLIENT_INVALID_INPUT;
     }
 
     //
@@ -194,7 +259,7 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
     memset(_buffer, 0, _buffer_size);
     do
     {
-        bytes = esp_tls_conn_read(tls_conn, pos, left);
+		bytes = esp_tls_conn_read(_tls_conn, pos, left);
 
         left -= bytes;
         pos += bytes;       
@@ -210,14 +275,12 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
     {
         ESP_LOGE(TAG, "Response code not found");
 
-        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
     else if(resp_code != 200)
     {
         ESP_LOGE(TAG, "HTTP not OK, status: %d", resp_code);
 
-        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
 
@@ -227,11 +290,10 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
     {
         ESP_LOGE(TAG, "Could not parse body");
 
-        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
     // Skip 2x \r\n
-    resp_body += 4;;
+	resp_body += 4;
 
     //
     // Parse JSON resp
@@ -245,7 +307,7 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
         {
             ESP_LOGE(TAG, "Invalid JSON object in response.");
 
-            esp_tls_conn_delete(tls_conn);
+
             return IPFS_CLIENT_INVALID_RESPONSE;
         }
         else
@@ -257,7 +319,7 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
                 file_out->size = obj["size"].as<uint32_t>();
             }
 
-            esp_tls_conn_delete(tls_conn);
+
             return IPFS_CLIENT_OK;
         }
     }
@@ -265,11 +327,9 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
     {
         ESP_LOGE(TAG, "Could not parse response JSON.");
         
-        esp_tls_conn_delete(tls_conn);
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
 
-    esp_tls_conn_delete(tls_conn);
     return IPFS_CLIENT_OK;
 }
 

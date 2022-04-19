@@ -1,7 +1,7 @@
 /******************************************************************************
  * @author Nikos Tsiligaridis
  * @brief Simple IPFS client for ESP32 IDF
- * @version 0.1.0
+ * @version 0.1.1
  * @date 2022-04-03
  * 
  * @copyright Copyright (c) 2022
@@ -9,6 +9,7 @@
 #ifndef IPFS_H
 #define IPFS_H
 
+#include "esp_tls.h"
 #include "http_parser.h"
 
 class IPFSClient
@@ -20,11 +21,13 @@ public:
     enum Result
     {
         IPFS_CLIENT_OK,
+        IPFS_CLIENT_NOT_CONNECTED,
         IPFS_CLIENT_CANNOT_CONNECT,
         IPFS_CLIENT_INVALID_ADDRESS,
         IPFS_CLIENT_REQUEST_FAILED,
         IPFS_CLIENT_INVALID_RESPONSE,
-        IPFS_CLIENT_INVALID_INPUT
+        IPFS_CLIENT_INVALID_INPUT,
+        IPFS_CLIENT_INVALID_STATE
     };
 
     /**
@@ -40,6 +43,11 @@ public:
     // IPFSClient(char *buff, int size);
     IPFSClient(){};
     ~IPFSClient(){};
+
+    Result connect();
+    Result disconnect();
+    bool is_connected();
+    esp_tls_conn_state get_status();
 
     void set_buffer(char *buff, int size);
     Result set_addr(const char *addr);
@@ -69,6 +77,9 @@ private:
 
     /** Basic auth creds */
     char _basic_auth_creds_base64[100] = "";
+
+    /** ESP TLS connection handle */
+    esp_tls *_tls_conn = NULL;
 
     static const char API_PATH[];
 };
