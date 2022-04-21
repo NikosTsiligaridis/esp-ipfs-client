@@ -28,7 +28,6 @@ const char TAG[] = "IPFSClient";
 
 // Write to socket, on failure return error
 #define ASSERT_WRITE(val) do { \
-	printf("Wrote: %s\n", val); \
 	if(esp_tls_conn_write(_tls_conn, val, strlen(val)) < 0) { \
         ESP_LOGE(TAG, "Req. write failed"); \
         return IPFS_CLIENT_REQUEST_FAILED; \
@@ -280,6 +279,7 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
     else if(resp_code != 200)
     {
         ESP_LOGE(TAG, "HTTP not OK, status: %d", resp_code);
+
 
         return IPFS_CLIENT_INVALID_RESPONSE;
     }
