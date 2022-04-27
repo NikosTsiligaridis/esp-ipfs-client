@@ -1,7 +1,7 @@
 /******************************************************************************
  * @author Nikos Tsiligaridis
- * @brief Simple IPFS client for ESP32 IDF
- * @version 0.1.0
+ * @brief Simple IPFS client for ESP32 IDF with TLS support
+ * @version 0.1.1
  * @date 2022-04-03
  * 
  * @copyright Copyright (c) 2022
@@ -16,7 +16,6 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
-#include "esp_crt_bundle.h"
 #include "http_parser.h"
 #include "mbedtls/base64.h"
 #include "ipfs_client.h"
@@ -42,6 +41,8 @@ const char USER_AGENT[] = "ESP32_IPFS_Client";
 
 /******************************************************************************
 * Connect to node
+* @param tls_cfg    ESP-TLS config struct. NULL for non-TLS connection. Struct
+*                   will be copied
 * @return 
 *	- IPFS_CLIENT_INVALID_STATE Already connected
 ******************************************************************************/
@@ -63,14 +64,7 @@ IPFSClient::Result IPFSClient::connect()
 
 	ESP_LOGW(TAG, "Connecting to %s", _addr);
 
-	// Config ESP TLS to use cert bundle        
-	esp_tls_cfg_t tls_cfg = {
-		.use_secure_element = false,
-		.timeout_ms = _timeout_ms,
-		.crt_bundle_attach = esp_crt_bundle_attach
-	};
-
-	_tls_conn = esp_tls_conn_http_new(_addr, &tls_cfg);
+	_tls_conn = esp_tls_conn_http_new(_addr, &_tls_cfg);
 	if(_tls_conn == NULL)
 	{
 		ESP_LOGE(TAG, "Could not open TLS connection.");
@@ -334,12 +328,12 @@ IPFSClient::Result IPFSClient::add(IPFSFile *file_out, const char *filename, con
 }
 
 /******************************************************************************
-* Set timeout for all requests to IPFS cluster
-* @param ms Timeout in ms
+* Set ESP-TLS configuration
+* @param tls_cfg Config struct
 ******************************************************************************/
-void IPFSClient::set_req_timeout(uint32_t ms)
+void IPFSClient::set_tls_cfg(esp_tls_cfg_t *tls_cfg)
 {
-    _timeout_ms = ms;
+    memcpy(&_tls_cfg, tls_cfg, sizeof(esp_tls_cfg_t));
 }
 
 /******************************************************************************

@@ -22,6 +22,14 @@ ipfs_client.set_addr("ipfs.examp.le");
 ipfs_client.set_basic_auth_creds("timon", "pumba");
 ipfs_client.set_buffer(buff, sizeof(buff));
 
+esp_tls_cfg_t tls_cfg = {
+    .cacert_buf = pem_start,
+    .cacert_bytes = pem_end - pem_start,
+    .timeout_ms = 10000
+};
+
+ipfs_client.set_tls_cfg(&tls_cfg);
+
 // Will receive parsed response
 IPFSClient::IPFSFile ipfs_file = {};
 

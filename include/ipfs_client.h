@@ -51,7 +51,8 @@ public:
 
     void set_buffer(char *buff, int size);
     Result set_addr(const char *addr);
-    void set_req_timeout(uint32_t ms);
+    void set_tls_cfg(esp_tls_cfg_t *tls_cfg);
+
     void set_basic_auth_creds_base64(const char *creds);
     void set_basic_auth_creds(const char *user, const char *pass);
 
@@ -80,6 +81,9 @@ private:
 
     /** ESP TLS connection handle */
     esp_tls *_tls_conn = NULL;
+
+    /** ESP-TLS config struct */
+    esp_tls_cfg_t _tls_cfg = {};
 
     static const char API_PATH[];
 };
